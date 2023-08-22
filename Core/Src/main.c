@@ -25,6 +25,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "SEGGER_SYSVIEW.h"
+#include "semphr.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -34,7 +35,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define STACK_SIZE	128
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,6 +46,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+SemaphoreHandle_t semPtr_A = NULL;
 
 /* USER CODE END PV */
 
@@ -52,7 +54,8 @@
 void SystemClock_Config(void);
 void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
-
+void GreenTask(void *arg);
+void BlueTask(void *arg);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -67,6 +70,10 @@ void MX_FREERTOS_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+  semPtr_A = xSemaphoreCreateBinary();
+  assert_param(semPtr_A != NULL);
+
+
 
   /* USER CODE END 1 */
 
@@ -90,7 +97,11 @@ int main(void)
   MX_GPIO_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-SEGGER_SYSVIEW_Conf();
+  SEGGER_SYSVIEW_Conf();
+
+  xTaskCreate(GreenTask, "GreenTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
+  xTaskCreate(BlueTask, "BlueTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -167,6 +178,58 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
+
+void GreenTask(void *arg)
+{
+	uint8_t count = 0;
+
+
+	while(1)
+	{
+		uint8_t numRand = rand();
+		numRand = numRand/64 + 3;
+
+		if(count >= numRand)
+		{
+			SEGGER_SYSVIEW_PrintfHost("Green Task gives semaphore");
+			xSemaphoreGive(semPtr_A);
+			count = 0;
+		}
+
+		HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
+		vTaskDelay(100/portTICK_PERIOD_MS);
+		HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
+		vTaskDelay(100/portTICK_PERIOD_MS);
+		count++;
+	}
+}
+
+void BlueTask(void *arg)
+{
+	while(1)
+	{
+		if(xSemaphoreTake(semPtr_A, 500/portTICK_PERIOD_MS) == pdPASS)
+		{
+			SEGGER_SYSVIEW_PrintfHost("BlueTask has taken semaphore");
+			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
+
+			for(uint8_t i = 0; i < 3; i++)
+			{
+				HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+				vTaskDelay(40/portTICK_PERIOD_MS);
+				HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+				vTaskDelay(40/portTICK_PERIOD_MS);
+			}
+
+		}
+		else
+		{
+			SEGGER_SYSVIEW_PrintfHost("BlueTask failed to take semaphore");
+			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
+		}
+	}
+
+}
 /* USER CODE END 4 */
 
 /**
