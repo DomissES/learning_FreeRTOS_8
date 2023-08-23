@@ -56,6 +56,7 @@ void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 void GreenTask(void *arg);
 void BlueTask(void *arg);
+void RedTask(void *arg);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -99,9 +100,12 @@ int main(void)
   /* USER CODE BEGIN 2 */
   SEGGER_SYSVIEW_Conf();
 
-  xTaskCreate(GreenTask, "GreenTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
-  xTaskCreate(BlueTask, "BlueTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+  xTaskCreate(GreenTask, "GreenTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, NULL);
+  xTaskCreate(BlueTask, "BlueTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
+  xTaskCreate(RedTask, "RedTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
 
+
+  xSemaphoreGive(semPtr_A);
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -186,50 +190,88 @@ void GreenTask(void *arg)
 
 	while(1)
 	{
-		uint8_t numRand = rand();
-		numRand = numRand/64 + 3;
 
-		if(count >= numRand)
+		if(xSemaphoreTake(semPtr_A, 200/portTICK_PERIOD_MS) == pdPASS)
 		{
-			SEGGER_SYSVIEW_PrintfHost("Green Task gives semaphore");
+			SEGGER_SYSVIEW_PrintfHost("Green Task has taken a semaphore");
+			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
+
+			for(uint8_t i = 0; i < 2; i++)
+			{
+				HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
+				vTaskDelay(100/portTICK_PERIOD_MS);
+				HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
+				vTaskDelay(100/portTICK_PERIOD_MS);
+			}
 			xSemaphoreGive(semPtr_A);
-			count = 0;
+		}
+		else
+		{
+			SEGGER_SYSVIEW_PrintfHost("GreenTask failed to take semaphore");
+
+			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
 		}
 
-		HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
-		vTaskDelay(100/portTICK_PERIOD_MS);
-		HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
-		vTaskDelay(100/portTICK_PERIOD_MS);
-		count++;
+		vTaskDelay(20/portTICK_PERIOD_MS);
 	}
 }
 
 void BlueTask(void *arg)
 {
+	uint32_t busyTime = 0;
+
 	while(1)
 	{
-		if(xSemaphoreTake(semPtr_A, 500/portTICK_PERIOD_MS) == pdPASS)
+		uint32_t busyTime = rand();
+		busyTime = busyTime / 8192 + 50000;
+
+		SEGGER_SYSVIEW_PrintfHost("BlueTask makes nonsense %uix time", busyTime);
+
+		vTaskDelay(((rand()>>24)/3 + 75));
+
+
+
+		for(uint32_t i = 0; i < busyTime; i++)
 		{
-			SEGGER_SYSVIEW_PrintfHost("BlueTask has taken semaphore");
+			for(uint16_t j = 0; j < 64; j++)
+			{
+				uint8_t something = i % 4;
+			}
+		}
+	}
+
+}
+
+void RedTask(void *arg)
+{
+
+	while(1)
+	{
+		if(xSemaphoreTake(semPtr_A, 200/portTICK_PERIOD_MS) == pdPASS)
+		{
+			SEGGER_SYSVIEW_PrintfHost("RedTask has taken a semaphore");
 			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
 
-			for(uint8_t i = 0; i < 3; i++)
+			for(uint8_t i = 0; i < 2; i++)
 			{
 				HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
-				vTaskDelay(40/portTICK_PERIOD_MS);
+				vTaskDelay(100/portTICK_PERIOD_MS);
 				HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
-				vTaskDelay(40/portTICK_PERIOD_MS);
-			}
+				vTaskDelay(100/portTICK_PERIOD_MS);
 
+				xSemaphoreGive(semPtr_A);
+			}
 		}
 		else
 		{
-			SEGGER_SYSVIEW_PrintfHost("BlueTask failed to take semaphore");
+			SEGGER_SYSVIEW_PrintfHost("RedTask failed to take semaphore");
+
 			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
 		}
 	}
 
 }
+
 /* USER CODE END 4 */
 
 /**
