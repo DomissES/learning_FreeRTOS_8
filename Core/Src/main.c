@@ -26,6 +26,7 @@
 /* USER CODE BEGIN Includes */
 #include "SEGGER_SYSVIEW.h"
 #include "semphr.h"
+#include "timers.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,8 +47,15 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-SemaphoreHandle_t semPtr_A = NULL;
+SemaphoreHandle_t mutexPtr = NULL;
 
+struct DataReading
+{
+	uint16_t x;
+	uint16_t y;
+	uint16_t z;
+};
+struct DataReading sharedData;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -57,6 +65,10 @@ void MX_FREERTOS_Init(void);
 void GreenTask(void *arg);
 void BlueTask(void *arg);
 void RedTask(void *arg);
+
+void oneShotCallback(TimerHandle_t xTimerOneShot);
+void repeatTimerCallback(TimerHandle_t xTimerRepeat);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -71,8 +83,8 @@ void RedTask(void *arg);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-  semPtr_A = xSemaphoreCreateBinary();
-  assert_param(semPtr_A != NULL);
+  mutexPtr = xSemaphoreCreateMutex();
+  assert_param(mutexPtr != NULL);
 
 
 
@@ -100,12 +112,26 @@ int main(void)
   /* USER CODE BEGIN 2 */
   SEGGER_SYSVIEW_Conf();
 
-  xTaskCreate(GreenTask, "GreenTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, NULL);
-  xTaskCreate(BlueTask, "BlueTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL);
-  xTaskCreate(RedTask, "RedTask", STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+
+  TimerHandle_t oneShotHandle = xTimerCreate("OneShotTimer", 2200/portTICK_PERIOD_MS, pdFALSE, NULL, oneShotCallback);
+  assert_param(oneShotHandle != NULL);
+
+  TimerHandle_t repeatTimerHandle = xTimerCreate("RepeatTimer", 500/portTICK_PERIOD_MS, pdTRUE, NULL, repeatTimerCallback);
+  assert_param(repeatTimerHandle != NULL);
+
+  xTimerStart(repeatTimerHandle, 0);
+  xTimerStart(oneShotHandle, 0 );
 
 
-  xSemaphoreGive(semPtr_A);
+  while(1)
+  {
+	  if(HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin))
+	  {
+		  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+		  break;
+	  }
+  }
+
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -182,62 +208,22 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
-
 void GreenTask(void *arg)
 {
-	uint8_t count = 0;
 
 
 	while(1)
 	{
 
-		if(xSemaphoreTake(semPtr_A, 200/portTICK_PERIOD_MS) == pdPASS)
-		{
-			SEGGER_SYSVIEW_PrintfHost("Green Task has taken a semaphore");
-			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
-
-			for(uint8_t i = 0; i < 2; i++)
-			{
-				HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
-				vTaskDelay(100/portTICK_PERIOD_MS);
-				HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
-				vTaskDelay(100/portTICK_PERIOD_MS);
-			}
-			xSemaphoreGive(semPtr_A);
-		}
-		else
-		{
-			SEGGER_SYSVIEW_PrintfHost("GreenTask failed to take semaphore");
-
-			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
-		}
-
-		vTaskDelay(20/portTICK_PERIOD_MS);
 	}
 }
 
 void BlueTask(void *arg)
 {
-	uint32_t busyTime = 0;
 
 	while(1)
 	{
-		uint32_t busyTime = rand();
-		busyTime = busyTime / 8192 + 50000;
 
-		SEGGER_SYSVIEW_PrintfHost("BlueTask makes nonsense %uix time", busyTime);
-
-		vTaskDelay(((rand()>>24)/3 + 75));
-
-
-
-		for(uint32_t i = 0; i < busyTime; i++)
-		{
-			for(uint16_t j = 0; j < 64; j++)
-			{
-				uint8_t something = i % 4;
-			}
-		}
 	}
 
 }
@@ -247,29 +233,20 @@ void RedTask(void *arg)
 
 	while(1)
 	{
-		if(xSemaphoreTake(semPtr_A, 200/portTICK_PERIOD_MS) == pdPASS)
-		{
-			SEGGER_SYSVIEW_PrintfHost("RedTask has taken a semaphore");
-			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
 
-			for(uint8_t i = 0; i < 2; i++)
-			{
-				HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
-				vTaskDelay(100/portTICK_PERIOD_MS);
-				HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
-				vTaskDelay(100/portTICK_PERIOD_MS);
-
-				xSemaphoreGive(semPtr_A);
-			}
-		}
-		else
-		{
-			SEGGER_SYSVIEW_PrintfHost("RedTask failed to take semaphore");
-
-			HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
-		}
 	}
 
+}
+
+
+void oneShotCallback(TimerHandle_t xTimer)
+{
+	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+}
+
+void repeatTimerCallback(TimerHandle_t xTimerRepeat)
+{
+	HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
 }
 
 /* USER CODE END 4 */
